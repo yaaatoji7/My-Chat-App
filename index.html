@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Acode Web Messenger</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: #121b22; display: flex; justify-content: center; align-items: center; height: 100vh; color: #e9edef; }
+    
+    #app-container { width: 100%; height: 100vh; max-width: 480px; background: #111b21; display: flex; flex-direction: column; overflow: hidden; }
+    
+    /* Login Screen */
+    #login-view { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; gap: 20px; padding: 30px; text-align: center; }
+    #login-view h2 { color: #00a884; font-size: 24px; }
+    #login-view p { color: #8696a0; font-size: 14px; }
+    .google-btn { background-color: #00a884; color: #111b21; border: none; padding: 14px 28px; font-size: 16px; border-radius: 25px; cursor: pointer; font-weight: bold; width: 100%; max-width: 280px; }
+    .google-btn:active { opacity: 0.8; }
+
+    /* Main Chat Interface */
+    #chat-view { display: none; flex-direction: column; height: 100%; }
+    header { background-color: #202c33; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #222d34; }
+    .user-info { display: flex; align-items: center; gap: 10px; }
+    .avatar { width: 36px; height: 36px; border-radius: 50%; background: #00a884; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #111b21; }
+    .title { font-size: 16px; font-weight: 600; color: #e9edef; }
+    header button { background: transparent; border: 1px solid #8696a0; color: #8696a0; padding: 6px 12px; border-radius: 6px; font-size: 12px; }
+    
+    /* Messages Area */
+    #messages { flex: 1; padding: 16px; overflow-y: auto; background-color: #0b141a; display: flex; flex-direction: column; gap: 8px; }
+    .message { max-width: 80%; padding: 8px 12px; border-radius: 8px; font-size: 14px; line-height: 1.4; word-wrap: break-word; position: relative; }
+    .message.sent { background-color: #005c4b; align-self: flex-end; color: #e9edef; border-top-right-radius: 0; }
+    .message.received { background-color: #202c33; align-self: flex-start; color: #e9edef; border-top-left-radius: 0; }
+    .sender-name { font-size: 11px; color: #53bdeb; margin-bottom: 2px; font-weight: 600; }
+    
+    /* Input Control */
+    form { display: flex; padding: 10px; background: #202c33; gap: 8px; align-items: center; }
+    input { flex: 1; padding: 12px 16px; background: #2a3942; border: none; border-radius: 20px; color: #e9edef; outline: none; font-size: 15px; }
+    input::placeholder { color: #8696a0; }
+    form button { background: #00a884; color: #111b21; border: none; width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+
+  <div id="app-container">
+    <!-- LOGIN PAGE -->
+    <div id="login-view">
+      <h2>Web Messenger</h2>
+      <p>Sign in with Google to enter the real-time chat room.</p>
+      <button class="google-btn" onclick="signInWithGoogle()">Sign in with Google</button>
+    </div>
+
+    <!-- CHAT PAGE -->
+    <div id="chat-view">
+      <header>
+        <div class="user-info">
+          <div class="avatar" id="user-avatar">?</div>
+          <span class="title" id="user-display-name">Chat Room</span>
+        </div>
+        <button onclick="logout()">Logout</button>
+      </header>
+      
+      <div id="messages"></div>
+
+      <form id="message-form" onsubmit="sendMessage(event)">
+        <input type="text" id="message-input" placeholder="Type a message..." required autocomplete="off">
+        <button type="submit">➤</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- FIREBASE CONFIG & FUNCTIONALITY -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    // Insert your Firebase credentials here
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const provider = new GoogleAuthProvider();
+
+    let currentUser = null;
+
+    window.signInWithGoogle = () => {
+      signInWithPopup(auth, provider).catch(error => {
+        alert("Sign-in error: " + error.message);
+      });
+    };
+
+    window.logout = () => {
+      signOut(auth);
+    };
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        currentUser = user;
+        document.getElementById("login-view").style.display = "none";
+        document.getElementById("chat-view").style.display = "flex";
+        document.getElementById("user-display-name").innerText = user.displayName || "User";
+        document.getElementById("user-avatar").innerText = (user.displayName || "U")[0].toUpperCase();
+        loadMessages();
+      } else {
+        currentUser = null;
+        document.getElementById("login-view").style.display = "flex";
+        document.getElementById("chat-view").style.display = "none";
+      }
+    });
+
+    window.sendMessage = async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("message-input");
+      const text = input.value.trim();
+
+      if (text && currentUser) {
+        input.value = "";
+        await addDoc(collection(db, "messages"), {
+          text: text,
+          uid: currentUser.uid,
+          displayName: currentUser.displayName || "Anonymous",
+          createdAt: serverTimestamp()
+        });
+      }
+    };
+
+    function loadMessages() {
+      const q = query(collection(db, "messages"), orderBy("createdAt", "asc"));
+      const messagesContainer = document.getElementById("messages");
+
+      onSnapshot(q, (snapshot) => {
+        messagesContainer.innerHTML = "";
+        snapshot.docs.forEach((doc) => {
+          const data = doc.data();
+          const msgDiv = document.createElement("div");
+          const isSentByMe = currentUser && data.uid === currentUser.uid;
+          
+          msgDiv.classList.add("message", isSentByMe ? "sent" : "received");
+          msgDiv.innerHTML = `
+            <div class="sender-name">${isSentByMe ? "You" : escapeHTML(data.displayName)}</div>
+            <div>${escapeHTML(data.text)}</div>
+          `;
+          messagesContainer.appendChild(msgDiv);
+        });
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      });
+    }
+
+    function escapeHTML(str) {
+      return (str || '').replace(/[&<>'"]/g, 
+        tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
+    }
+  </script>
+</body>
+</html>
